@@ -3,7 +3,7 @@ import json
 import urllib.request
 from telebot import types
 
-TOKEN = "8888203323:AAF6wND_MAWFDpLJM4z_6kH2ClXvhAwYoNg"
+TOKEN = "8888203323:AAHjS5pLeQs23b9gZWwgdFyoDhJPURMq8FQ"
 bot = telebot.TeleBot(TOKEN)
 
 user_selected_pair = {}
