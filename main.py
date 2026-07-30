@@ -1,6 +1,9 @@
 import io
+import os
 import random
+import threading
 import time
+from flask import Flask
 import matplotlib
 import matplotlib.pyplot as plt
 import telebot
@@ -9,12 +12,27 @@ from telebot import types
 matplotlib.use("Agg")
 
 # ---------------------------------------------------------
-# Տեղադրեք ձեր BotFather-ից ստացած ՆՈՐ Token-ը այստեղ
+# Web Server Render-ի համար (Timed out սխալից խուսափելու համար)
 # ---------------------------------------------------------
-TOKEN = "8888203323:AAHjS5pLeQs23b9gZWwgdFyoDhJPURMq8FQ"
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "Bot is alive and running!"
+
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+
+# ---------------------------------------------------------
+# Telegram Bot Token
+# ---------------------------------------------------------
+TOKEN = "8888203323:AAHjS5pLeQs23b9gZWwgdFyoDhJPURMq8FQ"  # Տեղադրեք ձեր ՆՈՐ Token-ը
 bot = telebot.TeleBot(TOKEN)
 
-# Pocket Option-ում ամենաեկամտաբեր/հանրահայտ զույգերը (OTC և Real)
 ASSETS = [
     "EUR/USD (OTC)",
     "GBP/USD (OTC)",
@@ -26,17 +44,14 @@ ASSETS = [
     "Ethereum (ETH)",
 ]
 
-# Ժամանակային ինտերվալները (3 վայրկյանից 5 րոպե)
 TIMEFRAMES = ["3 վայրկյան", "5 վայրկյան", "15 վայրկյան", "1 րոպե", "5 րոպե"]
 
 
-def generate_chart(asset_name, direction, time_frame):
-    """Գեներացնում է գեղեցիկ ազդանշանային գրաֆիկ նկարի տեսքով"""
+def generate_chart(asset_name, direction):
     plt.figure(figsize=(7, 4), facecolor="#1e1e2e")
     ax = plt.axes()
     ax.set_facecolor("#181825")
 
-    # Գրաֆիկի կետերի իմիտացիա
     x = list(range(20))
     start_price = random.uniform(1.0500, 1.2500)
     prices = [start_price]
@@ -45,7 +60,6 @@ def generate_chart(asset_name, direction, time_frame):
         change = random.uniform(-0.0015, 0.0015)
         prices.append(prices[-1] + change)
 
-    # Գծագրում
     color = "#24ca74" if direction == "ՎԵՐԵՎ ⬆️" else "#ff4a4a"
     plt.plot(x, prices, color=color, linewidth=2.5, marker="o", markersize=4)
 
@@ -59,9 +73,13 @@ def generate_chart(asset_name, direction, time_frame):
     plt.xticks(color="white")
     plt.yticks(color="white")
 
-    # Նկարը պահում ենք հիշողության մեջ
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", facecolor=plt.gcf().get_facecolor())
+    plt.savefig(
+        buf,
+        format="png",
+        bbox_inches="tight",
+        facecolor=plt.gcf().get_facecolor(),
+    )
     buf.seek(0)
     plt.close()
     return buf
@@ -131,7 +149,6 @@ def process_signal(call):
     asset = ASSETS[int(asset_idx)]
     tf = TIMEFRAMES[int(tf_idx)]
 
-    # Պրոֆեսիոնալ ստուգման իմիտացիա (Loading)
     msg = bot.send_message(
         call.message.chat.id,
         "🔄 **Կատարվում է շուկայի խորը վերլուծություն...**\n"
@@ -139,17 +156,16 @@ def process_signal(call):
         parse_mode="Markdown",
     )
 
-    time.sleep(2)  # Վերլուծության սիմուլյացիա
+    time.sleep(2)
 
-    # Տեխնիկական հաշվարկի իմիտացիա (բարձր ճշգրտություն)
     win_rate = random.randint(84, 96)
     direction = random.choice(["ՎԵՐԵՎ ⬆️", "ՆԵՐՔԵՎ ⬇️"])
-    direction_emoji = "🟢 CALL (Գնում)" if "ՎԵՐԵՎ" in direction else "🔴 PUT (Վաճառք)"
+    direction_emoji = (
+        "🟢 CALL (Գնում)" if "ՎԵՐԵՎ" in direction else "🔴 PUT (Վաճառք)"
+    )
 
-    # Գրաֆիկի պատրաստում
-    chart_img = generate_chart(asset, direction, tf)
+    chart_img = generate_chart(asset, direction)
 
-    # Տեքստային ազդանշան
     caption = (
         f"🔥 **ՊՐՈՖԵՍԻՈՆԱԼ ԱԶԴԱՆՇԱՆ** 🔥\n\n"
         f"📌 **Ակտիվ:** `{asset}`\n"
@@ -160,7 +176,12 @@ def process_signal(call):
     )
 
     bot.delete_message(call.message.chat.id, msg.message_id)
-    bot.send_photo(call.message.chat.id, photo=chart_img, caption=caption, parse_mode="Markdown")
+    bot.send_photo(
+        call.message.chat.id,
+        photo=chart_img,
+        caption=caption,
+        parse_mode="Markdown",
+    )
 
 
 @bot.message_handler(func=lambda message: message.text == "ℹ️ Օգնություն")
@@ -177,4 +198,7 @@ def help_cmd(message):
 
 
 if __name__ == "__main__":
+    # Միացնում ենք Web Server-ը առանձին thread-ով Render-ի համար
+    threading.Thread(target=run_web, daemon=True).start()
+    # Միացնում ենք Telegram բոտը
     bot.infinity_polling()
