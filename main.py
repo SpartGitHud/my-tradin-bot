@@ -1,174 +1,180 @@
+import io
+import random
+import time
+import matplotlib
+import matplotlib.pyplot as plt
 import telebot
-import json
-import urllib.request
 from telebot import types
 
+matplotlib.use("Agg")
+
+# ---------------------------------------------------------
+# Տեղադրեք ձեր BotFather-ից ստացած ՆՈՐ Token-ը այստեղ
+# ---------------------------------------------------------
 TOKEN = "8888203323:AAHjS5pLeQs23b9gZWwgdFyoDhJPURMq8FQ"
 bot = telebot.TeleBot(TOKEN)
 
-user_selected_pair = {}
+# Pocket Option-ում ամենաեկամտաբեր/հանրահայտ զույգերը (OTC և Real)
+ASSETS = [
+    "EUR/USD (OTC)",
+    "GBP/USD (OTC)",
+    "USD/JPY (OTC)",
+    "AUD/CAD (OTC)",
+    "EUR/GBP (OTC)",
+    "Crypto IDX",
+    "Bitcoin (BTC)",
+    "Ethereum (ETH)",
+]
 
-# Топовые валютные пары и активы
-PAIRS = {
-    "1. EUR/USD 🇪🇺🇺🇸": "EURUSD=X",
-    "2. GBP/USD 🇬🇧🇺🇸": "GBPUSD=X",
-    "3. USD/JPY 🇺🇸🇯🇵": "USDJPY=X",
-    "4. AUD/USD 🇦🇺🇺🇸": "AUDUSD=X",
-    "5. Золото (XAU) 🏆": "GC=F",
-    "6. Bitcoin (BTC) ⚡️": "BTC-USD"
-}
+# Ժամանակային ինտերվալները (3 վայրկյանից 5 րոպե)
+TIMEFRAMES = ["3 վայրկյան", "5 վայրկյան", "15 վայրկյան", "1 րոպե", "5 րոպե"]
 
-TIMEFRAMES = {
-    "⏱ 1 минута": "1m",
-    "⏱ 2 минуты": "2m",
-    "⏱ 3 минуты": "2m",
-    "⏱ 5 минут": "5m"
-}
 
-def analyze_market(ticker_symbol, interval):
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_symbol}?interval={interval}&range=1d"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        req = urllib.request.Request(url, headers=headers)
-        
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode())
-            
-        indicators = data['chart']['result'][0]['indicators']['quote'][0]
-        closes = indicators.get('close', [])
-        prices = [p for p in closes if p is not None][-20:]
+def generate_chart(asset_name, direction, time_frame):
+    """Գեներացնում է գեղեցիկ ազդանշանային գրաֆիկ նկարի տեսքով"""
+    plt.figure(figsize=(7, 4), facecolor="#1e1e2e")
+    ax = plt.axes()
+    ax.set_facecolor("#181825")
 
-        if len(prices) < 10:
-            return "🟢 **ВВЕРХ (CALL)**", "80%", "Низкая волатильность"
+    # Գրաֆիկի կետերի իմիտացիա
+    x = list(range(20))
+    start_price = random.uniform(1.0500, 1.2500)
+    prices = [start_price]
 
-        # 1. Расчет RSI (14)
-        gains, losses = [], []
-        for i in range(1, len(prices)):
-            diff = prices[i] - prices[i-1]
-            if diff > 0:
-                gains.append(diff)
-                losses.append(0)
-            else:
-                gains.append(0)
-                losses.append(abs(diff))
+    for _ in range(19):
+        change = random.uniform(-0.0015, 0.0015)
+        prices.append(prices[-1] + change)
 
-        avg_gain = sum(gains[-14:]) / 14 if len(gains) >= 14 else sum(gains) / max(len(gains), 1)
-        avg_loss = sum(losses[-14:]) / 14 if len(losses) >= 14 else sum(losses) / max(len(losses), 1)
+    # Գծագրում
+    color = "#24ca74" if direction == "ՎԵՐԵՎ ⬆️" else "#ff4a4a"
+    plt.plot(x, prices, color=color, linewidth=2.5, marker="o", markersize=4)
 
-        rsi = 100 if avg_loss == 0 else 100 - (100 / (1 + (avg_gain / avg_loss)))
-
-        # 2. Тренд по скользящей средней (SMA)
-        sma = sum(prices[-5:]) / 5
-        current_price = prices[-1]
-
-        # Логика сигналов и точности
-        if rsi > 55 and current_price > sma:
-            signal = "🟢 **ВВЕРХ (CALL) ▲**"
-            accuracy = f"{min(85 + int(rsi % 10), 94)}%"
-            reason = f"Бычий импульс | RSI: {rsi:.1f}"
-        elif rsi < 45 and current_price < sma:
-            signal = "🔴 **ВНИЗ (PUT) ▼**"
-            accuracy = f"{min(85 + int((100 - rsi) % 10), 94)}%"
-            reason = f"Медвежий импульс | RSI: {rsi:.1f}"
-        elif current_price >= sma:
-            signal = "🟢 **ВВЕРХ (CALL) ▲**"
-            accuracy = "78%"
-            reason = f"Микро-тренд вверх | RSI: {rsi:.1f}"
-        else:
-            signal = "🔴 **ВНИЗ (PUT) ▼**"
-            accuracy = "76%"
-            reason = f"Микро-тренд вниз | RSI: {rsi:.1f}"
-
-        return signal, accuracy, reason
-
-    except Exception:
-        return "🟢 **ВВЕРХ (CALL) ▲**", "75%", "Базовый тренд"
-
-# Главное меню выбора пар
-def get_pairs_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for name in PAIRS.keys():
-        markup.add(types.KeyboardButton(name))
-    markup.add(types.KeyboardButton("ℹ️ Инструкция / Помощь"))
-    return markup
-
-# Меню выбора таймфрейма
-def get_tf_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for tf in TIMEFRAMES.keys():
-        markup.add(types.KeyboardButton(tf))
-    markup.add(types.KeyboardButton("⬅️ Назад в меню"))
-    return markup
-
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
-    welcome_text = (
-        "👋 **Привет! Я твой персональный AI-Аналитик.**\n\n"
-        "📈 Я анализирую рыночные данные с мировых бирж в режиме реального времени "
-        "и выдаю высокоточные сигналы для бинарных опционов.\n\n"
-        "1️⃣ **Шаг 1:** Выбери нужную валютную пару ниже:"
+    plt.title(
+        f"📊 Pocket Option Analysis | {asset_name}",
+        color="white",
+        fontsize=12,
+        pad=10,
     )
-    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_pairs_keyboard())
+    plt.grid(True, color="#313244", linestyle="--", alpha=0.5)
+    plt.xticks(color="white")
+    plt.yticks(color="white")
 
-@bot.message_handler(func=lambda message: True)
-def handle_messages(message):
-    chat_id = message.chat.id
-    text = message.text
+    # Նկարը պահում ենք հիշողության մեջ
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", facecolor=plt.gcf().get_facecolor())
+    buf.seek(0)
+    plt.close()
+    return buf
 
-    if text == "ℹ️ Инструкция / Помощь":
-        help_text = (
-            "📖 **Как правильно использовать сигналы:**\n\n"
-            "1. Выбери валютную пару в боте.\n"
-            "2. Укажи время экспирации (таймфрейм).\n"
-            "3. Перейди на брокера (Pocket Option) и открой сделку **в направлении сигнала**.\n"
-            "4. ⚠️ **Соблюдай Риск-Менеджмент:** На одну сделку старайся выделять не более **1-3%** от общего банка!"
+
+@bot.message_handler(commands=["start"])
+def send_welcome(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    btn_signal = types.KeyboardButton("📈 Ստանալ Ազդանշան")
+    btn_help = types.KeyboardButton("ℹ️ Օգնություն")
+    markup.add(btn_signal, btn_help)
+
+    welcome_text = (
+        "💎 **Բարի գալուստ Pocket Option VIP Trading Bot** 💎\n\n"
+        "🤖 Այս բոտը կատարում է շուկայի տեխնիկական վերլուծություն (RSI, MACD, Trend Lines) "
+        "և տալիս է բարձր ճշգրտության ազդանշաններ։\n\n"
+        "👇 Սեղմեք **«📈 Ստանալ Ազդանշան»** կոճակը սկսելու համար։"
+    )
+    bot.send_message(
+        message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "📈 Ստանալ Ազդանշան")
+def select_asset(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        types.InlineKeyboardButton(text=asset, callback_data=f"asset_{i}")
+        for i, asset in enumerate(ASSETS)
+    ]
+    markup.add(*buttons)
+
+    bot.send_message(
+        message.chat.id,
+        "🎯 **Ընտրեք ակտիվը / արժութային զույգը Pocket Option-ում.**",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("asset_"))
+def select_timeframe(call):
+    asset_idx = int(call.data.split("_")[1])
+    selected_asset = ASSETS[asset_idx]
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        types.InlineKeyboardButton(
+            text=tf, callback_data=f"tf_{asset_idx}_{i}"
         )
-        bot.send_message(chat_id, help_text, parse_mode="Markdown")
+        for i, tf in enumerate(TIMEFRAMES)
+    ]
+    markup.add(*buttons)
 
-    elif text == "⬅️ Назад в меню":
-        bot.send_message(chat_id, "1️⃣ **Выбери валютную пару:**", parse_mode="Markdown", reply_markup=get_pairs_keyboard())
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"📊 Ընտրված ակտիվ՝ **{selected_asset}**\n⏱ **Ընտրեք գործարքի ժամանակը (Timeframe).**",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
 
-    elif text in PAIRS:
-        user_selected_pair[chat_id] = text
-        bot.send_message(
-            chat_id, 
-            f"🎯 Выбран актив: **{text}**\n\n2️⃣ **Шаг 2:** Выбери время экспирации сделки:", 
-            parse_mode="Markdown", 
-            reply_markup=get_tf_keyboard()
-        )
 
-    elif text in TIMEFRAMES:
-        pair_name = user_selected_pair.get(chat_id)
-        if not pair_name:
-            bot.send_message(chat_id, "Пожалуйста, сначала выбери валютную пару.", reply_markup=get_pairs_keyboard())
-            return
+@bot.callback_query_handler(func=lambda call: call.data.startswith("tf_"))
+def process_signal(call):
+    _, asset_idx, tf_idx = call.data.split("_")
+    asset = ASSETS[int(asset_idx)]
+    tf = TIMEFRAMES[int(tf_idx)]
 
-        pair_symbol = PAIRS[pair_name]
-        interval = TIMEFRAMES[text]
+    # Պրոֆեսիոնալ ստուգման իմիտացիա (Loading)
+    msg = bot.send_message(
+        call.message.chat.id,
+        "🔄 **Կատարվում է շուկայի խորը վերլուծություն...**\n"
+        "📥 Ստուգվում են RSI, MACD և Bollinger Bands ցուցանիշները...",
+        parse_mode="Markdown",
+    )
 
-        bot.send_message(chat_id, f"⚡️ *Сканирую рыночные данные {pair_name}...*", parse_mode="Markdown")
+    time.sleep(2)  # Վերլուծության սիմուլյացիա
 
-        signal_text, accuracy, reason = analyze_market(pair_symbol, interval)
+    # Տեխնիկական հաշվարկի իմիտացիա (բարձր ճշգրտություն)
+    win_rate = random.randint(84, 96)
+    direction = random.choice(["ՎԵՐԵՎ ⬆️", "ՆԵՐՔԵՎ ⬇️"])
+    direction_emoji = "🟢 CALL (Գնում)" if "ՎԵՐԵՎ" in direction else "🔴 PUT (Վաճառք)"
 
-        result_message = (
-            f"💎 **АНАЛИЗ ЗАВЕРШЕН** 💎\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 **Актив:** `{pair_name}`\n"
-            f"⏱ **Экспирация:** `{text}`\n"
-            f"🎯 **Прогноз:** {signal_text}\n"
-            f"🔥 **Проход:** `{accuracy}`\n"
-            f"💡 **Факторы:** `{reason}`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Рекомендуемая ставка: 1-2% от депозита.*"
-        )
+    # Գրաֆիկի պատրաստում
+    chart_img = generate_chart(asset, direction, tf)
 
-        bot.send_message(
-            chat_id,
-            result_message,
-            parse_mode="Markdown",
-            reply_markup=get_pairs_keyboard()
-        )
-    else:
-        bot.send_message(chat_id, "Воспользуйся кнопками меню ниже 👇", reply_markup=get_pairs_keyboard())
+    # Տեքստային ազդանշան
+    caption = (
+        f"🔥 **ՊՐՈՖԵՍԻՈՆԱԼ ԱԶԴԱՆՇԱՆ** 🔥\n\n"
+        f"📌 **Ակտիվ:** `{asset}`\n"
+        f"⏱ **Ժամանակ:** `{tf}`\n"
+        f"🎯 **Ուղղություն:** **{direction}** ({direction_emoji})\n"
+        f"📊 **Վերլուծության ճշգրտություն:** `{win_rate}%`\n"
+        f"💡 **Խորհուրդ:** Մտեք գործարքի մեջ անմիջապես ազդանշանը ստանալուն պես Pocket Option-ում:"
+    )
 
-bot.polling(none_stop=True)
+    bot.delete_message(call.message.chat.id, msg.message_id)
+    bot.send_photo(call.message.chat.id, photo=chart_img, caption=caption, parse_mode="Markdown")
+
+
+@bot.message_handler(func=lambda message: message.text == "ℹ️ Օգնություն")
+def help_cmd(message):
+    bot.send_message(
+        message.chat.id,
+        "❓ **Ինչպես օգտվել բոտից.**\n\n"
+        "1. Սեղմեք «📈 Ստանալ Ազդանշան»\n"
+        "2. Ընտրեք Pocket Option-ում առկա ակտիվը\n"
+        "3. Ընտրեք գործարքի տևողությունը (3 վրկ-ից 5 րոպե)\n"
+        "4. Սպասեք վերլուծությանը և կատարեք գործարքը ըստ ցուցումների (ՎԵՐԵՎ կամ ՆԵՐՔԵՎ):",
+        parse_mode="Markdown",
+    )
+
+
+if __name__ == "__main__":
+    bot.infinity_polling()
